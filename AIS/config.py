@@ -1,0 +1,1 @@
+DB_PATH = "C:/Users/sabado/Desktop/Diogo/Aula2/AIS/dados.db"
