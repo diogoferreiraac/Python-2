@@ -80,23 +80,108 @@ def upload():
 
 
 
-@app.route('/consultar')
+@app.route('/consultar', methods =  ['POST', 'GET'])
 def consultar():
-    return vazio
+    #Resultado se a página for carregada recebendo um POST
+    if request.method == 'POST':
+        tabela = request.form.get('campo_tabela')
+        if tabela not in ['inadimplencia', 'selic']:
+            return jsonify({"Erro": "Tabela Inválida"}), 400
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(f'SELECT * FROM {tabela}', conn)
+        return df.to_html(index=False)
+
+
+    #Resultado sem receber um post, ou seja, primeiro carregamento da página.
+    return render_template_string('''
+        <h1> CONSULTA DE TABELAS </h1>
+        <form method = 'POST'>
+            <label for = "campo_tabela"> Escolha a tabela: </label>
+            <select name = "campo_tabela">
+                <option value = "inadimplencia"> Inadimplência </option>
+                <option value = "selic"> Taxa Selic </option>
+            </select>
+            <input type="submit" value="Consultar">
+        </form> <br>
+        <a href="/"> Voltar </a>
+    ''')
 
 @app.route('/graficos')
 def graficos():
-    return vazio
+    with sqlite3.connect(DB_PATH) as conn:
+        inad_df = pd.read_sql_query("SELECT * FROM inadimplencia", conn)
+        selic_df = pd.read_sql_query("SELECT * FROM selic", conn)
+        
+        #inad_fig = go.scatter(inad_df, x= 'mes', y= 'inadimplencia')
+        #selic_fig = go.scatter(selic_df, x= 'mes', y='selic_diaria')
 
-@app.route('/editar_inadimplencia')
+        fig1 = go.Figure()
+        fig1.add_trace(go.Scatter(x=inad_df['mes'], y=inad_df['inadimplencia'], mode='lines+markers' , name='Inadimplência'))
+        fig1.update_layout(title = "Evolução da Inadimplência", xaxis_title= "Mês", yaxis_title= "Inadimplência em %", template = "plotly_dark")
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=selic_df['mes'], y=selic_df['selic_diaria'], mode='lines+markers' , name='Taxa Selic'))
+        fig2.update_layout(title = "Evolução da Taxa Selic", xaxis_title= "Mês", yaxis_title= "Selic em %", template = "plotly_dark")
+        
+        graph_html_1 = fig1.to_html(full_html=False, include_plotlyjs='cdn')
+        graph_html_2 = fig2.to_html(full_html=False, include_plotlyjs=False)
+
+
+    return render_template_string('''
+        <html>
+            <head>
+                <title> Gráficos Econômicos </title>
+                <style>
+                    .container{display: flex;justify-content:space-around;}
+                    .graph{widht:48%;}
+                </style>
+            </head>
+            <body>
+                <h1> Gráficos Econômicos </h1>
+                    <div class="container">
+                        <div class="graph"> {{grafico1|safe}} </div>
+                        <div class="graph"> {{grafico2|safe}} </div>
+                    </div>
+            </body>
+        </html>
+    ''', grafico1 = graph_html_1, grafico2 = graph_html_2)
+
+@app.route('/editar_inadimplencia', methods=['POST', 'GET'])
 def editar_inadimplencia():
-    return vazio
+    if request.method =='POST':
+        mes = request.form.get('campo_mes')
+        novo_valor = request.form.get('campo_valor')
+        try:
+            novo_valor = float(novo_valor)
+        except:
+            return jsonify({"Mensagem": "Digite um valor válido"})
+        
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE inadimplencia SET inadimplencia = ? WHERE mes = ?", (novo_valor, mes))
+            conn.commit()
+        return jsonify({'Mensagem': f'Valor atualizado para o mes {mes}'})
+
+    return render_template_string('''
+        <h1>Editar Inadimplência</h1>
+        <form method='POST'>
+            <label for="campo_mes"> Mês (AAAA-MM) </label>
+            <input type = "text" name ="campo_mes" ><br>
+            <label for="campo_valor"> Novo Valor de Inadimplência </label>
+            <input type = "text" name ="campo_valor" > <br>
+            <input type= "submit", value ="Atualizar Dados">
+        </form> <br>
+        <a href="/"> Voltar </a>
+        ''')    
 
 @app.route('/correlacao')
 def correlacao():
+    with sqlite3.connect(DB_PATH) as conn:
+        inad_df = pd.read_sql_query("SELECT * FROM inadimplencia", conn)
+        selic_df = pd.read_sql_query("SELECT * FROM selic", conn)
+        merged = pd.merge(inad_df, selic_df, on='mes')
+        correl = merged['inadimplencia'].corr(merged['selic_diaria'])
     return vazio
-
-
 
 if __name__ == '__main__':
     init_db()
